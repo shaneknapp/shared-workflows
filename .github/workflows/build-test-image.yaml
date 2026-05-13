@@ -25,7 +25,7 @@ jobs:
           df -h
 
       - name: Build and test the image if any image file(s) changed
-        uses: jupyterhub/repo2docker-action@0.2
+        uses: jupyterhub/repo2docker-action@master
         with:
           FORCE_REPO2DOCKER_VERSION: jupyter-repo2docker==2026.04.0
           REPO_DIR: /srv/repo

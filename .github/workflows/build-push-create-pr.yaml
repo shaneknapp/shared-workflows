@@ -56,7 +56,7 @@ jobs:
 
       - name: Build the image and push to artifact registry
         id: build-and-push
-        uses: jupyterhub/repo2docker-action@0.2
+        uses: jupyterhub/repo2docker-action@master
         with:
           FORCE_REPO2DOCKER_VERSION: jupyter-repo2docker==2026.04.0
           DOCKER_REGISTRY: us-central1-docker.pkg.dev
