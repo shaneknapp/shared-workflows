@@ -22,6 +22,10 @@ on:
         required: true
       IMAGE_BUILDER_CREATE_PR:
         required: true
+    outputs:
+      image-tag:
+        description: "The SHA tag of the built and pushed image"
+        value: ${{ jobs.build-and-push.outputs.image-tag }}
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -34,7 +38,7 @@ jobs:
 
     steps:
       - name: Check out the image repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0  # OR "2" -> To retrieve the preceding commit.
 
@@ -44,7 +48,7 @@ jobs:
           df -h
 
       - name: Log in to GAR
-        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9
+        uses: docker/login-action@v4.1.0
         with:
           registry: us-central1-docker.pkg.dev
           username: _json_key
@@ -52,7 +56,7 @@ jobs:
 
       - name: Build the image and push to artifact registry
         id: build-and-push
-        uses: jupyterhub/repo2docker-action@master
+        uses: jupyterhub/repo2docker-action@0.2
         with:
           FORCE_REPO2DOCKER_VERSION: jupyter-repo2docker==2026.04.0
           DOCKER_REGISTRY: us-central1-docker.pkg.dev
@@ -87,7 +91,7 @@ jobs:
 
     steps:
       - name: Checkout the Jupyterhub repo
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@v6.0.2
         with:
           token: ${{ secrets.IMAGE_BUILDER_CREATE_PR }}
           fetch-depth: 0
