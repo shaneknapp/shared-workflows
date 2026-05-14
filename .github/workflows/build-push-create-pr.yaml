@@ -1,4 +1,4 @@
-name: Build and Push Container Image, and Push Update to the Cal-ICOR Hub Repo 
+name: Build and Push Container Image, and Push Update to the Cal-ICOR Hub Repo
 on:
   workflow_call:
     inputs:
@@ -98,7 +98,7 @@ jobs:
           repository: 'cal-icor/cal-icor-hubs'
           sparse-checkout: |
             deployments/
-  
+
       - name: Set git identity
         run: |
           git config --global user.email "${{ inputs.image_builder_bot_email }}"
@@ -127,9 +127,9 @@ jobs:
               echo "  Updated JupyterHub-style tag: ${old_hash} -> ${new_hash}"
             fi
           done
-  
+
       - name: Create feature branch, add, commit, push changes and open a pull request
-        env: 
+        env:
           GH_TOKEN: ${{ secrets.IMAGE_BUILDER_CREATE_PR }}
         run: |
           CHANGED_FILES=$(git status --porcelain -uno | awk '{print $2}')

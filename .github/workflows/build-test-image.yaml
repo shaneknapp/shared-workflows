@@ -1,4 +1,4 @@
-name: Build and Test Container Image 
+name: Build and Test Container Image
 
 on:
   workflow_call:
