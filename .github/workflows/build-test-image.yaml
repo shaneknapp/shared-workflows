@@ -25,6 +25,7 @@ jobs:
           df -h
 
       - name: Build and test the image if any image file(s) changed
+        id: repo2docker
         uses: jupyterhub/repo2docker-action@master
         with:
           FORCE_REPO2DOCKER_VERSION: jupyter-repo2docker==2026.04.0
@@ -35,3 +36,48 @@ jobs:
       # Lets us monitor disks getting full as images get bigger over time
       - name: Show how much disk space is left
         run: df -h
+
+      - name: Check for browser tests
+        id: browser-tests-check
+        run: |
+          if [ -d "browser-tests" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Start container for browser tests
+        if: steps.browser-tests-check.outputs.present == 'true'
+        run: |
+          docker run -d --name browser-test-container \
+            -p 8888:8888 \
+            ${{ steps.repo2docker.outputs.IMAGE_SHA_NAME }} \
+            jupyter lab --ip=0.0.0.0 --no-browser --ServerApp.token=''
+
+      - name: Wait for Jupyter to be ready
+        if: steps.browser-tests-check.outputs.present == 'true'
+        run: |
+          echo "Waiting for Jupyter server..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8888/api/status > /dev/null 2>&1; then
+              echo "Jupyter is ready after $((i * 5))s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Jupyter did not become ready in time"
+              docker logs browser-test-container
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Install Playwright and run browser tests
+        if: steps.browser-tests-check.outputs.present == 'true'
+        run: |
+          pip install --quiet -r browser-tests/requirements.txt
+          playwright install chromium
+          pytest browser-tests/ -v
+
+      - name: Stop browser test container
+        if: always() && steps.browser-tests-check.outputs.present == 'true'
+        run: docker stop browser-test-container || true

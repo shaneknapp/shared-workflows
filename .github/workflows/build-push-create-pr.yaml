@@ -75,6 +75,51 @@ jobs:
       - name: Show how much disk space is left
         run: df -h
 
+      - name: Check for browser tests
+        id: browser-tests-check
+        run: |
+          if [ -d "browser-tests" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Start container for browser tests
+        if: steps.browser-tests-check.outputs.present == 'true'
+        run: |
+          docker run -d --name browser-test-container \
+            -p 8888:8888 \
+            ${{ steps.build-and-push.outputs.IMAGE_SHA_NAME }} \
+            jupyter lab --ip=0.0.0.0 --no-browser --ServerApp.token=''
+
+      - name: Wait for Jupyter to be ready
+        if: steps.browser-tests-check.outputs.present == 'true'
+        run: |
+          echo "Waiting for Jupyter server..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8888/api/status > /dev/null 2>&1; then
+              echo "Jupyter is ready after $((i * 5))s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Jupyter did not become ready in time"
+              docker logs browser-test-container
+              exit 1
+            fi
+            sleep 5
+          done
+
+      - name: Install Playwright and run browser tests
+        if: steps.browser-tests-check.outputs.present == 'true'
+        run: |
+          pip install --quiet -r browser-tests/requirements.txt
+          playwright install chromium
+          pytest browser-tests/ -v
+
+      - name: Stop browser test container
+        if: always() && steps.browser-tests-check.outputs.present == 'true'
+        run: docker stop browser-test-container || true
+
   update-deployment-image-tag:
     runs-on: ubuntu-latest
     needs: build-and-push
@@ -116,7 +161,7 @@ jobs:
 
       - name: Update the tag for any deployments that use this image
         run: |
-          for deployment in $(find deployments -type f -name common.yaml -exec grep -l "${IMAGE}" {} +); do
+          while IFS= read -r deployment; do
             echo "Processing ${deployment}..."
 
             # ---- Inline image update: image: repo/name:tag ----
@@ -136,7 +181,7 @@ jobs:
               sed -i -e "s,${old_hash},${new_hash},g" "${deployment}"
               echo "  Updated JupyterHub-style tag: ${old_hash} -> ${new_hash}"
             fi
-          done
+          done < <(find deployments -type f -name common.yaml -exec grep -l "${IMAGE}" {} +)
 
       - name: Create feature branch, add, commit, push changes and open a pull request
         env:
@@ -144,24 +189,24 @@ jobs:
         run: |
           CHANGED_FILES=$(git status --porcelain -uno | awk '{print $2}')
           git diff
-          git checkout -b update-${HUB}-image-tag-${IMAGE_TAG}
+          git checkout -b "update-${HUB}-image-tag-${IMAGE_TAG}"
           # to be safe, only add files that have changed
-          for file in $(echo -e ${CHANGED_FILES}); do
-            git add ${file}
-          done
+          while IFS= read -r file; do
+            git add "${file}"
+          done <<< "${CHANGED_FILES}"
 
           BRANCH="update-${HUB}-image-tag-${IMAGE_TAG}"
           MESSAGE="update ${HUB} image tag to ${IMAGE_TAG}"
           git commit -m "${MESSAGE}"
-          git push origin ${BRANCH}
+          git push origin "${BRANCH}"
           #
           # now create a PR!
           #
-          cat << EOF > ${HOME}/pr-body.txt
+          cat << EOF > "${HOME}/pr-body.txt"
           ${MESSAGE}
 
           ${CHANGED_FILES}
 
           EOF
-          BODY=$(cat ${HOME}/pr-body.txt)
-          gh pr new -t "${MESSAGE}" -b "${BODY}" -H${BRANCH} -Bstaging
+          BODY=$(cat "${HOME}/pr-body.txt")
+          gh pr new -t "${MESSAGE}" -b "${BODY}" -H"${BRANCH}" -Bstaging
