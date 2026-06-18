@@ -184,9 +184,25 @@ jobs:
             fi
           done < <(find deployments -type f -name common.yaml -exec grep -l "${IMAGE}" {} +)
 
+      - name: Find the image-repo PR that triggered this build
+        id: source-pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_URL=$(gh pr list -R "${{ github.repository }}" \
+            --search "${{ github.sha }}" --state merged \
+            --json url --jq '.[0].url // empty' || true)
+          echo "url=${PR_URL}" >> "$GITHUB_OUTPUT"
+          if [ -n "${PR_URL}" ]; then
+            echo "Source image PR: ${PR_URL}"
+          else
+            echo "No associated PR found for ${{ github.sha }}"
+          fi
+
       - name: Create feature branch, add, commit, push changes and open a pull request
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SOURCE_PR_URL: ${{ steps.source-pr.outputs.url }}
         run: |
           CHANGED_FILES=$(git status --porcelain -uno | awk '{print $2}')
           git diff
@@ -197,17 +213,22 @@ jobs:
           done <<< "${CHANGED_FILES}"
 
           BRANCH="update-${HUB}-image-tag-${IMAGE_TAG}"
-          MESSAGE="update ${HUB} image tag to ${IMAGE_TAG}"
+          MESSAGE="update \`${HUB}\` image tag to \`${IMAGE_TAG}\`"
           git commit -m "${MESSAGE}"
           git push origin "${BRANCH}"
           #
           # now create a PR!
           #
-          cat << EOF > "${HOME}/pr-body.txt"
-          ${MESSAGE}
-
-          ${CHANGED_FILES}
-
-          EOF
+          {
+            echo "${MESSAGE}"
+            echo ""
+            echo '```'
+            echo "${CHANGED_FILES}"
+            echo '```'
+            echo ""
+            if [ -n "${SOURCE_PR_URL}" ]; then
+              echo "Image PR that triggered this update: ${SOURCE_PR_URL}"
+            fi
+          } > "${HOME}/pr-body.txt"
           BODY=$(cat "${HOME}/pr-body.txt")
           gh pr new -t "${MESSAGE}" -b "${BODY}" -H"${BRANCH}" -Bstaging
